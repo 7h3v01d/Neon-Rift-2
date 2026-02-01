@@ -1,0 +1,2140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>NEON RIFT 2 — One-File Action Side-Scroller</title>
+  <style>
+    :root{
+      --bg:#070812;
+      --panel: rgba(15,18,40,.72);
+      --panel2: rgba(15,18,40,.45);
+      --text:#e9ecff;
+      --muted:#a7b0ff;
+      --accent:#8b5cf6;
+      --accent2:#22d3ee;
+      --danger:#fb7185;
+      --good:#34d399;
+      --warn:#fbbf24;
+      --shadow: rgba(0,0,0,.35);
+    }
+    html,body{height:100%; margin:0; background:radial-gradient(1200px 700px at 50% 40%, #0b0f2a 0%, var(--bg) 55%, #000 100%); color:var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; overflow:hidden;}
+    .wrap{height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:14px;}
+    .topbar{width:min(1100px, 96vw); display:flex; align-items:center; justify-content:space-between; gap:10px;}
+    .brand{display:flex; align-items:baseline; gap:10px;}
+    .brand h1{margin:0; font-size:18px; letter-spacing:1px; text-transform:uppercase;}
+    .brand .tag{font-size:12px; color:var(--muted); opacity:.9}
+    .pillrow{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end}
+    .pill{background:linear-gradient(180deg, rgba(139,92,246,.22), rgba(34,211,238,.12)); border:1px solid rgba(255,255,255,.10); padding:6px 10px; border-radius:999px; font-size:12px; color:var(--text); box-shadow:0 10px 30px var(--shadow); backdrop-filter: blur(8px);}
+    canvas{
+      width:min(1100px, 96vw);
+      height:auto;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.12);
+      background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
+      box-shadow:0 18px 70px rgba(0,0,0,.55);
+      image-rendering: pixelated;
+      touch-action:none;
+    }
+    .help{
+      width:min(1100px, 96vw);
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      font-size:12px;
+      color:rgba(233,236,255,.82);
+      line-height:1.35;
+      background: linear-gradient(180deg, var(--panel), var(--panel2));
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      padding:10px 12px;
+      box-shadow:0 12px 40px rgba(0,0,0,.35);
+      backdrop-filter: blur(10px);
+    }
+    .help b{color:var(--text)}
+    .help .col{flex:1; min-width:250px}
+    .help .muted{color:rgba(167,176,255,.86)}
+    .kbd{display:inline-block; padding:1px 6px; border-radius:8px; border:1px solid rgba(255,255,255,.16); background:rgba(0,0,0,.22); box-shadow: inset 0 0 0 1px rgba(255,255,255,.05); margin:0 2px;}
+    .foot{width:min(1100px, 96vw); text-align:center; font-size:11px; color:rgba(167,176,255,.72); opacity:.9}
+    @media (max-width: 760px){
+      .help{flex-direction:column}
+      .pillrow{justify-content:flex-start}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <h1>NEON RIFT 2</h1>
+        <div class="tag">one-file action side-scroller</div>
+      </div>
+      <div class="pillrow">
+        <div class="pill">Dash</div>
+        <div class="pill">Melee</div>
+        <div class="pill">Boss</div>
+        <div class="pill">Procedural</div>
+        <div class="pill">WebAudio SFX</div>
+      </div>
+    </div>
+
+    <!-- Internal resolution (for physics/pixel crispness) -->
+    <canvas id="c" width="1100" height="620" aria-label="Neon Rift game canvas"></canvas>
+
+    <div class="help">
+      <div class="col">
+        <div><b>Move</b>: <span class="kbd">←</span><span class="kbd">→</span> / <span class="kbd">A</span><span class="kbd">D</span> &nbsp; <b>Jump</b>: <span class="kbd">↑</span> / <span class="kbd">W</span> / <span class="kbd">J</span></div>
+        <div><b>Dash</b>: <span class="kbd">Shift</span> / <span class="kbd">K</span> &nbsp; <b>Melee</b>: <span class="kbd">L</span> &nbsp; <b>Shoot</b>: <span class="kbd">Space</span></div>
+      </div>
+      <div class="col">
+        <div><b>Pause</b>: <span class="kbd">P</span> &nbsp; <b>Restart</b>: <span class="kbd">R</span> &nbsp; <b>Mute</b>: <span class="kbd">M</span></div>
+        <div class="muted">Mobile: left = move, right = actions (jump / dash / shoot / melee). Tap HUD icons.</div>
+      </div>
+      <div class="col">
+        <div><b>Goal</b>: push through the rift, clear the miniboss, defeat the boss.</div>
+        <div class="muted">Tip: dash cancels recovery; melee reflects some enemy shots.</div>
+      </div>
+    </div>
+
+    <div class="foot">All procedural visuals + synth SFX. No external assets. One file.</div>
+  </div>
+
+<script>
+(() => {
+  // =========================
+  // Utilities
+  // =========================
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const invLerp = (a, b, v) => (v - a) / (b - a);
+  const smoothstep = (t) => t * t * (3 - 2 * t);
+  const rand = (a=0, b=1) => a + Math.random() * (b - a);
+  const randi = (a, b) => Math.floor(rand(a, b+1));
+  const sign = (x) => (x < 0 ? -1 : 1);
+  const now = () => performance.now();
+
+  function hash2(n){
+    // Deterministic-ish pseudo-random based on integer input (for procedural ornaments)
+    n = (n << 13) ^ n;
+    return (1.0 - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0);
+  }
+
+  // AABB
+  function aabb(ax, ay, aw, ah, bx, by, bw, bh){
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  // Sweep-ish axis separation for solid blocks (simple but stable)
+  function resolveAABB(body, solids){
+    let onGround = false;
+    // Horizontal
+    body.x += body.vx;
+    for(const s of solids){
+      if(!s.solid) continue;
+      if(aabb(body.x, body.y, body.w, body.h, s.x, s.y, s.w, s.h)){
+        if(body.vx > 0) body.x = s.x - body.w;
+        else if(body.vx < 0) body.x = s.x + s.w;
+        body.vx = 0;
+      }
+    }
+    // Vertical
+    body.y += body.vy;
+    for(const s of solids){
+      if(!s.solid) continue;
+      if(aabb(body.x, body.y, body.w, body.h, s.x, s.y, s.w, s.h)){
+        if(body.vy > 0){
+          body.y = s.y - body.h;
+          body.vy = 0;
+          onGround = true;
+        }else if(body.vy < 0){
+          body.y = s.y + s.h;
+          body.vy = 0;
+        }
+      }
+    }
+    return onGround;
+  }
+
+  // =========================
+  // Canvas setup
+  // =========================
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: true });
+
+  // =========================
+  // Input (keyboard + touch)
+  // =========================
+  const input = {
+    left:false, right:false, up:false,
+    shoot:false, melee:false, dash:false,
+    pause:false, restart:false, mute:false,
+    anyPressed:false,
+    // edge-triggered
+    _shootDown:false, _meleeDown:false, _dashDown:false, _jumpDown:false,
+    // touch
+    touchActive:false,
+    touchLeft:false, touchRight:false,
+    touchJump:false, touchDash:false, touchShoot:false, touchMelee:false
+  };
+
+  const keyMap = new Map([
+    ['ArrowLeft','left'], ['KeyA','left'],
+    ['ArrowRight','right'], ['KeyD','right'],
+    ['ArrowUp','up'], ['KeyW','up'], ['KeyJ','up'],
+    ['Space','shoot'],
+    ['KeyL','melee'],
+    ['ShiftLeft','dash'], ['ShiftRight','dash'], ['KeyK','dash'],
+    ['KeyP','pause'],
+    ['KeyR','restart'],
+    ['KeyM','mute']
+  ]);
+
+  window.addEventListener('keydown', (e) => {
+    const k = keyMap.get(e.code);
+    if(!k) return;
+    e.preventDefault();
+    if(k === 'shoot') input._shootDown = true;
+    if(k === 'melee') input._meleeDown = true;
+    if(k === 'dash') input._dashDown = true;
+    if(k === 'up') input._jumpDown = true;
+    if(k === 'pause') input.pause = true;
+    if(k === 'restart') input.restart = true;
+    if(k === 'mute') input.mute = true;
+
+    input[k] = true;
+    input.anyPressed = true;
+  }, { passive:false });
+
+  window.addEventListener('keyup', (e) => {
+    const k = keyMap.get(e.code);
+    if(!k) return;
+    e.preventDefault();
+    input[k] = false;
+  }, { passive:false });
+
+  // Touch UI (left half move, right half actions)
+  const touch = {
+    id:null, x:0, y:0, startX:0, startY:0, down:false,
+    id2:null, x2:0, y2:0, down2:false
+  };
+
+  function resetTouchButtons(){
+    input.touchLeft = input.touchRight = false;
+    input.touchJump = input.touchDash = input.touchShoot = input.touchMelee = false;
+  }
+
+  function handleTouchButtons(px, py, isDown){
+    // Define virtual buttons in screen space based on canvas size
+    // We'll compute in draw() too for visuals, but logic uses same layout.
+    const W = canvas.width, H = canvas.height;
+    const pad = 16;
+    const btn = 56;
+
+    const rightX = W - pad - btn;
+    const jumpRect = { x:rightX, y:H - pad - btn*2 - 8, w:btn, h:btn };
+    const dashRect = { x:rightX, y:H - pad - btn, w:btn, h:btn };
+    const shootRect = { x:rightX - btn - 10, y:H - pad - btn, w:btn, h:btn };
+    const meleeRect = { x:rightX - btn - 10, y:H - pad - btn*2 - 8, w:btn, h:btn };
+
+    const inRect = (r) => px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h;
+
+    if(isDown){
+      input.touchJump = inRect(jumpRect);
+      input.touchDash = inRect(dashRect);
+      input.touchShoot = inRect(shootRect);
+      input.touchMelee = inRect(meleeRect);
+    }else{
+      input.touchJump = input.touchDash = input.touchShoot = input.touchMelee = false;
+    }
+  }
+
+  function handleTouchMoveZone(px, py){
+    const W = canvas.width;
+    // left 45% for movement
+    if(px < W * 0.45){
+      // directional based on delta from start
+      const dx = px - touch.startX;
+      input.touchLeft = dx < -10;
+      input.touchRight = dx > 10;
+    }else{
+      input.touchLeft = input.touchRight = false;
+    }
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    input.touchActive = true;
+    input.anyPressed = true;
+
+    if(!touch.down){
+      touch.id = e.pointerId;
+      touch.down = true;
+      touch.x = touch.startX = e.offsetX * (canvas.width / canvas.clientWidth);
+      touch.y = touch.startY = e.offsetY * (canvas.height / canvas.clientHeight);
+    }else if(!touch.down2){
+      touch.id2 = e.pointerId;
+      touch.down2 = true;
+      touch.x2 = e.offsetX * (canvas.width / canvas.clientWidth);
+      touch.y2 = e.offsetY * (canvas.height / canvas.clientHeight);
+    }
+    // Evaluate buttons immediately
+    handleTouchButtons(
+      e.offsetX * (canvas.width / canvas.clientWidth),
+      e.offsetY * (canvas.height / canvas.clientHeight),
+      true
+    );
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if(!input.touchActive) return;
+    const x = e.offsetX * (canvas.width / canvas.clientWidth);
+    const y = e.offsetY * (canvas.height / canvas.clientHeight);
+
+    if(e.pointerId === touch.id){
+      touch.x = x; touch.y = y;
+      handleTouchMoveZone(x, y);
+      handleTouchButtons(x, y, true);
+    }else if(e.pointerId === touch.id2){
+      touch.x2 = x; touch.y2 = y;
+      // second finger: prioritize buttons
+      handleTouchButtons(x, y, true);
+    }
+  });
+
+  canvas.addEventListener('pointerup', (e) => {
+    if(e.pointerId === touch.id){
+      touch.down = false; touch.id = null;
+      input.touchLeft = input.touchRight = false;
+      input.touchJump = input.touchDash = input.touchShoot = input.touchMelee = false;
+    }
+    if(e.pointerId === touch.id2){
+      touch.down2 = false; touch.id2 = null;
+      input.touchJump = input.touchDash = input.touchShoot = input.touchMelee = false;
+    }
+    if(!touch.down && !touch.down2){
+      input.touchActive = false;
+      resetTouchButtons();
+    }
+  });
+
+  canvas.addEventListener('pointercancel', () => {
+    touch.down = touch.down2 = false;
+    input.touchActive = false;
+    resetTouchButtons();
+  });
+
+  // =========================
+  // WebAudio tiny synth SFX (no external files)
+  // =========================
+  let audioCtx = null;
+  let master = null;
+  const audio = {
+    muted: false,
+    ensure(){
+      if(audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      master = audioCtx.createGain();
+      master.gain.value = 0.25;
+      master.connect(audioCtx.destination);
+    },
+    toggleMute(){
+      audio.muted = !audio.muted;
+      if(master) master.gain.value = audio.muted ? 0 : 0.25;
+    },
+    blip(freq=440, dur=0.06, type='square', gain=0.2){
+      if(audio.muted) return;
+      audio.ensure();
+      const t = audioCtx.currentTime;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t);
+      o.frequency.exponentialRampToValueAtTime(freq * 0.65, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(gain, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t + dur + 0.02);
+    },
+    thump(freq=70, dur=0.12, gain=0.25){
+      if(audio.muted) return;
+      audio.ensure();
+      const t = audioCtx.currentTime;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq, t);
+      o.frequency.exponentialRampToValueAtTime(freq * 0.5, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t + dur + 0.03);
+    },
+    noise(dur=0.08, gain=0.18){
+      if(audio.muted) return;
+      audio.ensure();
+      const t = audioCtx.currentTime;
+      const bufferSize = Math.floor(audioCtx.sampleRate * dur);
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2-1) * (1 - i/bufferSize);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buffer;
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(gain, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(g); g.connect(master);
+      src.start(t); src.stop(t + dur + 0.02);
+    }
+  };
+
+  // =========================
+  // Game config
+  // =========================
+  const CFG = {
+    gravity: 0.92,
+    frictionGround: 0.82,
+    frictionAir: 0.95,
+    maxRun: 8.2,
+    accel: 1.15,
+    jumpVel: -16.8,
+    doubleJumpVel: -15.0,
+    coyoteMs: 105,
+    jumpBufferMs: 115,
+    dashSpeed: 17.5,
+    dashMs: 140,
+    dashCooldownMs: 320,
+    invulnMs: 650,
+    bulletSpeed: 15.5,
+    bulletLifeMs: 900,
+    enemyBulletSpeed: 11.0,
+    cameraLerp: 0.10
+  };
+
+  // =========================
+  // World + entities
+  // =========================
+  class Camera {
+    constructor(){
+      this.x=0; this.y=0;
+      this.sx=0; this.sy=0; // shake
+      this.shake=0;
+    }
+    bump(power){
+      this.shake = Math.min(18, this.shake + power);
+    }
+    update(targetX, targetY){
+      // Smooth follow
+      this.x = lerp(this.x, targetX, CFG.cameraLerp);
+      this.y = lerp(this.y, targetY, CFG.cameraLerp*0.9);
+
+      // Shake decay
+      this.shake = Math.max(0, this.shake * 0.90 - 0.12);
+      const a = this.shake;
+      this.sx = (Math.random()*2-1) * a;
+      this.sy = (Math.random()*2-1) * a;
+    }
+  }
+
+  class Particles {
+    constructor(){ this.p=[]; }
+    spawn(x,y, n, base, spread=1){
+      for(let i=0;i<n;i++){
+        this.p.push({
+          x,y,
+          vx: (Math.random()*2-1)*spread + base.vx,
+          vy: (Math.random()*2-1)*spread + base.vy,
+          r: base.r + rand(-1,1),
+          life: base.life * rand(0.6,1.2),
+          age:0,
+          c: base.c,
+          g: base.g ?? 0.18,
+          drag: base.drag ?? 0.98
+        });
+      }
+    }
+    update(dt){
+      const keep=[];
+      for(const q of this.p){
+        q.age += dt;
+        if(q.age >= q.life) continue;
+        q.vx *= q.drag;
+        q.vy = q.vy*q.drag + q.g*dt*0.06;
+        q.x += q.vx*dt;
+        q.y += q.vy*dt;
+        keep.push(q);
+      }
+      this.p = keep;
+    }
+    draw(ctx, cam){
+      for(const q of this.p){
+        const t = 1 - (q.age/q.life);
+        ctx.globalAlpha = t;
+        ctx.fillStyle = q.c;
+        ctx.beginPath();
+        ctx.arc(q.x - cam.x + cam.sx, q.y - cam.y + cam.sy, Math.max(0.5,q.r*t), 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  class World {
+    constructor(){
+      this.solids=[];
+      this.hazards=[];
+      this.pickups=[];
+      this.enemies=[];
+      this.enemyBullets=[];
+      this.playerBullets=[];
+      this.fx = new Particles();
+      this.width = 0;
+      this.height = 2200;
+      this.checkpoints=[];
+      this.goalX = 0;
+      this.seed = randi(1, 10_000_000);
+      this.segmentLen = 900;
+      this.segments = 10; // base
+      this.bossSpawned = false;
+      this.minibossSpawned = false;
+    }
+
+    reset(seed){
+      this.seed = seed ?? randi(1, 10_000_000);
+      this.solids = [];
+      this.hazards = [];
+      this.pickups = [];
+      this.enemies = [];
+      this.enemyBullets = [];
+      this.playerBullets = [];
+      this.fx = new Particles();
+      this.checkpoints = [];
+      this.bossSpawned = false;
+      this.minibossSpawned = false;
+
+      // Build a hybrid: early handcrafted tutorial beat + procedural segments
+      const groundY = 540;
+      const totalSeg = 12;
+      this.segments = totalSeg;
+      this.width = totalSeg * this.segmentLen;
+      this.goalX = this.width - 240;
+
+      // Base ground
+      this.solids.push({ x:-200, y:groundY, w:this.width+400, h:80, solid:true, kind:'ground' });
+
+      // Handcrafted opening platforms / hazards
+      this.solids.push({ x:260, y:430, w:170, h:20, solid:true, kind:'plat' });
+      this.solids.push({ x:520, y:360, w:180, h:20, solid:true, kind:'plat' });
+      this.solids.push({ x:820, y:410, w:190, h:20, solid:true, kind:'plat' });
+      this.hazards.push({ x:660, y:groundY+55, w:140, h:25, solid:false, kind:'spikes' });
+
+      // A couple pickups to teach
+      this.pickups.push(new Pickup(330, 395, 'coin'));
+      this.pickups.push(new Pickup(580, 325, 'coin'));
+      this.pickups.push(new Pickup(920, 375, 'heal'));
+
+      // Early enemies
+      this.enemies.push(new EnemyPatroller(980, groundY-52));
+      this.enemies.push(new EnemyShooter(1250, groundY-52));
+
+      // Checkpoint 1
+      this.checkpoints.push({ x: 1450, y: groundY-70, w: 26, h: 70, used:false });
+
+      // Procedural mid segments
+      for(let i=2;i<totalSeg-2;i++){
+        this._genSegment(i, groundY);
+      }
+
+      // Miniboss arena segment
+      const miniSeg = totalSeg-2;
+      const arenaX = miniSeg*this.segmentLen + 120;
+      this.solids.push({ x: arenaX, y: groundY-110, w: 280, h: 20, solid:true, kind:'plat' });
+      this.solids.push({ x: arenaX+420, y: groundY-165, w: 280, h: 20, solid:true, kind:'plat' });
+      this.hazards.push({ x: arenaX+250, y: groundY+55, w: 190, h: 25, solid:false, kind:'spikes' });
+      this.checkpoints.push({ x: arenaX+720, y: groundY-70, w: 26, h: 70, used:false });
+
+      // Boss segment (final)
+      const bossSeg = totalSeg-1;
+      const bossX = bossSeg*this.segmentLen + 200;
+      // Create a dramatic stepped floor
+      this.solids.push({ x: bossX-80, y: groundY-70, w: 320, h: 20, solid:true, kind:'plat' });
+      this.solids.push({ x: bossX+300, y: groundY-120, w: 320, h: 20, solid:true, kind:'plat' });
+      this.solids.push({ x: bossX+660, y: groundY-70, w: 420, h: 20, solid:true, kind:'plat' });
+
+      // More pickups near end
+      this.pickups.push(new Pickup(bossX+60, groundY-105, 'mod_rapid'));
+      this.pickups.push(new Pickup(bossX+360, groundY-155, 'coin'));
+      this.pickups.push(new Pickup(bossX+720, groundY-105, 'mod_pierce'));
+      this.pickups.push(new Pickup(this.goalX-60, groundY-95, 'coin'));
+
+      // End gate (visual marker; win condition is boss defeated + reach goal zone)
+      this.solids.push({ x:this.goalX+90, y: groundY-250, w: 60, h: 250, solid:false, kind:'gate' });
+    }
+
+    _genSegment(i, groundY){
+      const baseX = i*this.segmentLen;
+      const localSeed = Math.floor((this.seed*1315423911 + i*2654435761) >>> 0);
+
+      // A few floating platforms
+      const platformCount = 2 + (Math.abs(hash2(localSeed))>0.2 ? 1:0);
+      for(let p=0;p<platformCount;p++){
+        const h = 20;
+        const w = randi(140, 280);
+        const px = baseX + randi(90, this.segmentLen-120);
+        const py = groundY - randi(120, 250) + randi(-15, 15);
+        this.solids.push({ x:px, y:py, w, h, solid:true, kind:'plat' });
+
+        // chance of coin chain above
+        if(Math.abs(hash2(localSeed + p*17)) > 0.05){
+          const chain = randi(2, 5);
+          for(let c=0;c<chain;c++){
+            this.pickups.push(new Pickup(px + 20 + c*34, py - 34 - (c%2)*8, 'coin'));
+          }
+        }
+      }
+
+      // Hazards pocket
+      if(Math.abs(hash2(localSeed + 99)) > 0.35){
+        const sx = baseX + randi(220, this.segmentLen-260);
+        const sw = randi(120, 260);
+        this.hazards.push({ x:sx, y:groundY+55, w:sw, h:25, solid:false, kind:'spikes' });
+      }
+
+      // Enemies
+      const enemyRoll = Math.abs(hash2(localSeed+7));
+      if(enemyRoll > 0.62){
+        this.enemies.push(new EnemyPatroller(baseX + randi(240, this.segmentLen-220), groundY-52));
+      }
+      if(enemyRoll < 0.28){
+        this.enemies.push(new EnemyShooter(baseX + randi(260, this.segmentLen-260), groundY-52));
+      }
+      if(Math.abs(hash2(localSeed+333)) > 0.72){
+        this.enemies.push(new EnemyFlyer(baseX + randi(220, this.segmentLen-220), groundY - randi(260, 360)));
+      }
+
+      // Some heal/energy drops sprinkled
+      const pr = Math.abs(hash2(localSeed+444));
+      if(pr > 0.78){
+        this.pickups.push(new Pickup(baseX + randi(180, this.segmentLen-180), groundY-95, 'heal'));
+      }else if(pr < 0.12){
+        this.pickups.push(new Pickup(baseX + randi(180, this.segmentLen-180), groundY-95, 'energy'));
+      }
+    }
+  }
+
+  // =========================
+  // Entities
+  // =========================
+  class Pickup {
+    constructor(x,y,type){
+      this.x=x; this.y=y; this.type=type;
+      this.w=18; this.h=18;
+      this.t=rand(0, 999);
+      this.dead=false;
+    }
+    update(dt, world){
+      this.t += dt;
+      // idle bob
+      this.y += Math.sin(this.t*0.006) * 0.06 * dt;
+    }
+    draw(ctx, cam){
+      const x = this.x - cam.x + cam.sx;
+      const y = this.y - cam.y + cam.sy;
+      ctx.save();
+      ctx.translate(x+this.w/2, y+this.h/2);
+      const pulse = 0.9 + 0.12*Math.sin(this.t*0.01);
+      ctx.scale(pulse, pulse);
+
+      let c = '#fbbf24';
+      let stroke = 'rgba(255,255,255,.15)';
+      if(this.type==='heal'){ c = '#34d399'; }
+      if(this.type==='energy'){ c = '#22d3ee'; }
+      if(this.type==='mod_rapid'){ c = '#8b5cf6'; }
+      if(this.type==='mod_pierce'){ c = '#fb7185'; }
+
+      // glow
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.arc(0,0, 14, 0, Math.PI*2); ctx.fill();
+
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = c;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 2;
+      // icon shape
+      if(this.type==='coin'){
+        ctx.beginPath(); ctx.roundRect(-8,-8,16,16,6); ctx.fill(); ctx.stroke();
+        ctx.fillStyle='rgba(0,0,0,.2)'; ctx.fillRect(-2,-6,4,12);
+      }else if(this.type==='heal'){
+        ctx.beginPath(); ctx.roundRect(-9,-9,18,18,6); ctx.fill(); ctx.stroke();
+        ctx.fillStyle='rgba(0,0,0,.25)';
+        ctx.fillRect(-2,-7,4,14);
+        ctx.fillRect(-7,-2,14,4);
+      }else if(this.type==='energy'){
+        ctx.beginPath();
+        ctx.moveTo(-2,-9); ctx.lineTo(8,-1); ctx.lineTo(2,-1); ctx.lineTo(5,9); ctx.lineTo(-8,2); ctx.lineTo(-2,2);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      }else{
+        ctx.beginPath(); ctx.roundRect(-9,-7,18,14,7); ctx.fill(); ctx.stroke();
+        ctx.fillStyle='rgba(0,0,0,.25)';
+        ctx.fillRect(-6,-1,12,2);
+      }
+      ctx.restore();
+    }
+  }
+
+  class Bullet {
+    constructor(x,y,vx,vy, friendly=true, pierce=false){
+      this.x=x; this.y=y;
+      this.vx=vx; this.vy=vy;
+      this.w=12; this.h=4;
+      this.life=0;
+      this.maxLife=CFG.bulletLifeMs;
+      this.friendly = friendly;
+      this.pierce = pierce;
+      this.dead=false;
+    }
+    update(dt, world){
+      this.life += dt;
+      if(this.life > this.maxLife) { this.dead=true; return; }
+      this.x += this.vx * (dt/16.666);
+      this.y += this.vy * (dt/16.666);
+
+      // collide with solids
+      for(const s of world.solids){
+        if(!s.solid) continue;
+        if(aabb(this.x,this.y,this.w,this.h, s.x,s.y,s.w,s.h)){
+          this.dead = true;
+          world.fx.spawn(this.x,this.y, 10, {vx:0,vy:0,r:2.2,life:240,c:'rgba(255,255,255,.9)',drag:0.92,g:0.0}, 1.9);
+          audio.noise(0.05, 0.10);
+          return;
+        }
+      }
+    }
+    draw(ctx, cam){
+      const x = this.x - cam.x + cam.sx;
+      const y = this.y - cam.y + cam.sy;
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      const grad = ctx.createLinearGradient(x, y, x+this.w, y);
+      if(this.friendly){
+        grad.addColorStop(0, 'rgba(34,211,238,.20)');
+        grad.addColorStop(0.45, 'rgba(34,211,238,1)');
+        grad.addColorStop(1, 'rgba(139,92,246,.20)');
+      }else{
+        grad.addColorStop(0, 'rgba(251,113,133,.20)');
+        grad.addColorStop(0.45, 'rgba(251,113,133,1)');
+        grad.addColorStop(1, 'rgba(251,191,36,.15)');
+      }
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.roundRect(x, y, this.w, this.h, 2);
+      ctx.fill();
+
+      // tail
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = this.friendly ? 'rgba(34,211,238,.55)' : 'rgba(251,113,133,.55)';
+      ctx.fillRect(x-10, y+1, 10, 2);
+      ctx.restore();
+    }
+  }
+
+  class EnemyBase {
+    constructor(x,y){
+      this.x=x; this.y=y;
+      this.vx=0; this.vy=0;
+      this.w=38; this.h=52;
+      this.hp=3;
+      this.maxHp=3;
+      this.dead=false;
+      this.iMs=0;
+      this.face=1;
+      this.score=40;
+      this.kind='enemy';
+    }
+    hurt(world, dmg, knockX){
+      if(this.iMs>0) return false;
+      this.hp -= dmg;
+      this.iMs = 120;
+      this.vx += knockX;
+      world.fx.spawn(this.x+this.w/2, this.y+this.h/2, 18, {vx:0,vy:-0.6,r:2.4,life:260,c:'rgba(255,80,120,.95)',drag:0.90,g:0.02}, 2.2);
+      audio.noise(0.06, 0.12);
+      if(this.hp<=0){
+        this.dead=true;
+        world.fx.spawn(this.x+this.w/2, this.y+this.h/2, 32, {vx:0,vy:-1.2,r:3.0,life:420,c:'rgba(255,255,255,.9)',drag:0.90,g:0.02}, 3.0);
+        audio.thump(80, 0.12, 0.22);
+        return true;
+      }
+      return false;
+    }
+    update(dt, world, player){}
+    draw(ctx, cam){
+      const x = this.x - cam.x + cam.sx;
+      const y = this.y - cam.y + cam.sy;
+      const hit = this.iMs>0;
+
+      // body
+      ctx.save();
+      ctx.globalAlpha = hit ? 0.65 : 1;
+      // glow
+      ctx.globalAlpha *= 0.35;
+      ctx.fillStyle = 'rgba(251,113,133,.9)';
+      ctx.beginPath(); ctx.ellipse(x+this.w/2, y+this.h/2, this.w*0.62, this.h*0.62, 0, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = hit ? 0.75 : 1;
+
+      ctx.fillStyle = 'rgba(30,32,65,.95)';
+      ctx.strokeStyle = 'rgba(255,255,255,.14)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(x, y, this.w, this.h, 10); ctx.fill(); ctx.stroke();
+
+      // eye
+      ctx.fillStyle = 'rgba(251,113,133,1)';
+      ctx.beginPath();
+      ctx.arc(x+this.w/2 + this.face*6, y+this.h/2 - 6, 4.5, 0, Math.PI*2);
+      ctx.fill();
+
+      // hp bar
+      const t = this.hp/this.maxHp;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.fillRect(x, y-10, this.w, 6);
+      ctx.fillStyle = 'rgba(251,113,133,.95)';
+      ctx.fillRect(x, y-10, this.w*t, 6);
+
+      ctx.restore();
+    }
+  }
+
+  class EnemyPatroller extends EnemyBase {
+    constructor(x,y){
+      super(x,y);
+      this.kind = 'patroller';
+      this.hp=4; this.maxHp=4;
+      this.score=55;
+      this.walk = rand(0.9, 1.1);
+      this.turnTimer = 0;
+    }
+    update(dt, world, player){
+      if(this.dead) return;
+      this.iMs = Math.max(0, this.iMs - dt);
+
+      // Basic patrol: move toward player when near, else roam
+      const dist = (player.x - this.x);
+      const chase = Math.abs(dist) < 360;
+      const dir = chase ? sign(dist) : this.face;
+      this.face = dir;
+
+      const speed = chase ? 1.6 : 1.05;
+      this.vx += dir * 0.22 * speed * (dt/16.666);
+      this.vx = clamp(this.vx, -2.2*speed, 2.2*speed);
+
+      // gravity
+      this.vy += CFG.gravity * (dt/16.666);
+
+      // resolve collisions
+      const onG = resolveAABB(this, world.solids);
+      if(onG){
+        // friction
+        this.vx *= 0.86;
+        // edge detection: if about to walk off, turn
+        const aheadX = this.x + (this.face>0 ? this.w+6 : -6);
+        const footY = this.y + this.h + 2;
+        let hasFloor = false;
+        for(const s of world.solids){
+          if(!s.solid) continue;
+          if(aabb(aheadX, footY, 2, 2, s.x, s.y, s.w, s.h)) { hasFloor=true; break; }
+        }
+        if(!hasFloor){
+          this.face *= -1;
+          this.vx = -this.vx*0.4;
+        }
+      }
+
+      // soft bump when colliding with player (handled in player)
+    }
+  }
+
+  class EnemyShooter extends EnemyBase {
+    constructor(x,y){
+      super(x,y);
+      this.kind='shooter';
+      this.hp=3; this.maxHp=3;
+      this.score=75;
+      this.cool=rand(500, 900);
+      this.t=rand(0, 200);
+    }
+    update(dt, world, player){
+      if(this.dead) return;
+      this.iMs = Math.max(0, this.iMs - dt);
+      this.t += dt;
+      this.vy += CFG.gravity * (dt/16.666);
+
+      // face player
+      this.face = (player.x > this.x) ? 1 : -1;
+
+      // hop away if too close
+      const dist = player.x - this.x;
+      if(Math.abs(dist) < 140){
+        this.vx += -sign(dist) * 0.35 * (dt/16.666);
+      }else{
+        this.vx *= 0.90;
+      }
+      this.vx = clamp(this.vx, -2.2, 2.2);
+
+      resolveAABB(this, world.solids);
+
+      this.cool -= dt;
+      if(this.cool <= 0 && Math.abs(dist) < 520 && Math.abs(player.y - this.y) < 190){
+        this.cool = rand(700, 1100);
+        const ox = this.x + this.w/2 + this.face*16;
+        const oy = this.y + this.h*0.45;
+        const vx = this.face * CFG.enemyBulletSpeed;
+        const vy = clamp((player.y + player.h*0.3 - oy) * 0.03, -3.2, 3.2);
+        world.enemyBullets.push(new Bullet(ox, oy, vx, vy, false, false));
+        world.fx.spawn(ox, oy, 10, {vx:this.face*0.8,vy:-0.2,r:2.0,life:200,c:'rgba(251,191,36,.95)',drag:0.90,g:0.0}, 1.6);
+        audio.blip(220 + rand(-40,40), 0.05, 'sawtooth', 0.16);
+      }
+    }
+    draw(ctx, cam){
+      super.draw(ctx, cam);
+      // add muzzle indicator
+      const x = this.x - cam.x + cam.sx;
+      const y = this.y - cam.y + cam.sy;
+      ctx.save();
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = 'rgba(251,191,36,.95)';
+      ctx.beginPath();
+      ctx.arc(x+this.w/2 + this.face*16, y+this.h*0.45, 3.2, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  class EnemyFlyer extends EnemyBase {
+    constructor(x,y){
+      super(x,y);
+      this.kind='flyer';
+      this.hp=2; this.maxHp=2;
+      this.score=60;
+      this.baseY = y;
+      this.phase = rand(0, 999);
+      this.vy = 0;
+      this.h = 36; this.w = 44;
+    }
+    update(dt, world, player){
+      if(this.dead) return;
+      this.iMs = Math.max(0, this.iMs - dt);
+      this.phase += dt;
+
+      const tx = player.x + (player.face*120);
+      const dx = tx - this.x;
+      this.face = dx>=0 ? 1 : -1;
+
+      this.vx = clamp(dx * 0.012, -3.4, 3.4);
+      const bob = Math.sin(this.phase*0.004)*18;
+      const ty = this.baseY + bob + clamp((player.y - this.y)*0.06, -20, 20);
+      this.vy = clamp((ty - this.y) * 0.05, -2.8, 2.8);
+
+      this.x += this.vx * (dt/16.666);
+      this.y += this.vy * (dt/16.666);
+
+      // occasional dive shot
+      if(Math.abs(dx) < 420 && Math.abs(player.y - this.y) < 260 && Math.abs(hash2(Math.floor(this.phase/80))) > 0.88){
+        const ox = this.x + this.w/2 + this.face*14;
+        const oy = this.y + this.h*0.55;
+        world.enemyBullets.push(new Bullet(ox, oy, this.face*(CFG.enemyBulletSpeed+1.5), rand(-1.5, 2.0), false, false));
+        audio.blip(320 + rand(-30,30), 0.045, 'triangle', 0.12);
+      }
+    }
+    draw(ctx, cam){
+      const x = this.x - cam.x + cam.sx;
+      const y = this.y - cam.y + cam.sy;
+      const hit = this.iMs>0;
+      ctx.save();
+
+      // wings glow
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = 'rgba(34,211,238,.95)';
+      ctx.beginPath();
+      ctx.ellipse(x+this.w/2, y+this.h/2, this.w*0.85, this.h*0.55, Math.sin(this.phase*0.006)*0.2, 0, Math.PI*2);
+      ctx.fill();
+
+      ctx.globalAlpha = hit?0.70:1;
+      ctx.fillStyle = 'rgba(30,32,65,.95)';
+      ctx.strokeStyle = 'rgba(255,255,255,.14)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x, y, this.w, this.h, 12);
+      ctx.fill(); ctx.stroke();
+
+      // core
+      ctx.fillStyle = 'rgba(34,211,238,1)';
+      ctx.beginPath();
+      ctx.arc(x+this.w/2 + this.face*6, y+this.h/2, 4.5, 0, Math.PI*2);
+      ctx.fill();
+
+      // hp
+      const t = this.hp/this.maxHp;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.fillRect(x, y-10, this.w, 6);
+      ctx.fillStyle = 'rgba(34,211,238,.95)';
+      ctx.fillRect(x, y-10, this.w*t, 6);
+
+      ctx.restore();
+    }
+  }
+
+  class MiniBoss extends EnemyBase {
+    constructor(x,y){
+      super(x,y);
+      this.kind='miniboss';
+      this.w=72; this.h=68;
+      this.hp=24; this.maxHp=24;
+      this.score=420;
+      this.cool=400;
+      this.phase=0;
+      this.jumpCool=900;
+    }
+    update(dt, world, player){
+      if(this.dead) return;
+      this.iMs = Math.max(0, this.iMs - dt);
+      this.phase += dt;
+
+      const dist = player.x - this.x;
+      this.face = dist>=0 ? 1 : -1;
+
+      // heavy movement: stalk + occasional leaps
+      this.vx += sign(dist) * 0.16 * (dt/16.666);
+      this.vx = clamp(this.vx, -2.8, 2.8);
+
+      this.vy += CFG.gravity * 0.96 * (dt/16.666);
+      const onG = resolveAABB(this, world.solids);
+      if(onG){
+        this.vx *= 0.90;
+        this.jumpCool -= dt;
+        if(this.jumpCool<=0 && Math.abs(dist) < 520){
+          this.jumpCool = rand(800, 1300);
+          this.vy = -15.2;
+          this.vx += this.face * 3.1;
+          audio.thump(95, 0.10, 0.20);
+          world.fx.spawn(this.x+this.w/2, this.y+this.h, 24, {vx:0,vy:-0.4,r:2.4,life:420,c:'rgba(255,255,255,.7)',drag:0.90,g:0.03}, 2.2);
+          world.camera?.bump(3.5);
+        }
+      }
+
+      // burst shots
+      this.cool -= dt;
+      if(this.cool<=0 && Math.abs(dist) < 720){
+        this.cool = rand(600, 900);
+        const ox = this.x + this.w/2 + this.face*26;
+        const oy = this.y + this.h*0.45;
+        const burst = 3;
+        for(let i=0;i<burst;i++){
+          const spread = (i - (burst-1)/2) * 0.75;
+          world.enemyBullets.push(new Bullet(ox, oy, this.face*(CFG.enemyBulletSpeed+2.3), spread, false, false));
+        }
+        world.fx.spawn(ox, oy, 16, {vx:this.face*1.2,vy:-0.2,r:2.2,life:260,c:'rgba(251,191,36,.95)',drag:0.90,g:0.0}, 2.0);
+        audio.blip(180, 0.06, 'sawtooth', 0.18);
+      }
+    }
+    draw(ctx, cam){
+      const x = this.x - cam.x + cam.sx;
+      const y = this.y - cam.y + cam.sy;
+      const hit = this.iMs>0;
+
+      ctx.save();
+      // big glow
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = 'rgba(139,92,246,.95)';
+      ctx.beginPath(); ctx.ellipse(x+this.w/2, y+this.h/2, this.w*0.75, this.h*0.75, 0, 0, Math.PI*2); ctx.fill();
+
+      ctx.globalAlpha = hit?0.72:1;
+      ctx.fillStyle = 'rgba(30,32,65,.97)';
+      ctx.strokeStyle = 'rgba(255,255,255,.16)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(x, y, this.w, this.h, 14); ctx.fill(); ctx.stroke();
+
+      // core eyes
+      ctx.fillStyle = 'rgba(139,92,246,1)';
+      ctx.beginPath(); ctx.arc(x+this.w/2 + this.face*10, y+this.h/2 - 10, 5.2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(34,211,238,1)';
+      ctx.beginPath(); ctx.arc(x+this.w/2 - this.face*10, y+this.h/2 + 4, 4.0, 0, Math.PI*2); ctx.fill();
+
+      // hp bar (thick)
+      const t = this.hp/this.maxHp;
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.fillRect(x, y-16, this.w, 10);
+      ctx.fillStyle = 'rgba(139,92,246,.95)';
+      ctx.fillRect(x, y-16, this.w*t, 10);
+
+      ctx.restore();
+    }
+  }
+
+  class Boss extends EnemyBase {
+    constructor(x,y){
+      super(x,y);
+      this.kind='boss';
+      this.w=120; this.h=96;
+      this.hp=90; this.maxHp=90;
+      this.score=1500;
+      this.phase=0;
+      this.cool=380;
+      this.dashCool=1300;
+      this.rage=false;
+    }
+    update(dt, world, player){
+      if(this.dead) return;
+      this.iMs = Math.max(0, this.iMs - dt);
+      this.phase += dt;
+
+      const dist = player.x - this.x;
+      this.face = dist>=0 ? 1 : -1;
+      const hpT = this.hp/this.maxHp;
+      this.rage = hpT < 0.45;
+
+      // anchor-ish movement
+      this.vy += CFG.gravity * 0.82 * (dt/16.666);
+
+      // steps toward player but not too fast
+      const want = clamp(dist*0.005, -2.2, 2.2) * (this.rage ? 1.25 : 1.0);
+      this.vx = lerp(this.vx, want, 0.06);
+
+      const onG = resolveAABB(this, world.solids);
+      if(onG) this.vx *= 0.95;
+
+      // Pattern: fan shots + rings + dash slam
+      this.cool -= dt;
+      if(this.cool<=0 && Math.abs(dist) < 980){
+        const rage = this.rage;
+        this.cool = rage ? rand(260, 420) : rand(360, 520);
+
+        const ox = this.x + this.w/2 + this.face*40;
+        const oy = this.y + this.h*0.42;
+
+        // choose pattern based on phase + rage
+        const p = Math.floor((this.phase/600) % 3);
+        if(p===0){
+          // fan
+          const shots = rage ? 7 : 5;
+          for(let i=0;i<shots;i++){
+            const t = (i/(shots-1))*2 - 1;
+            const vy = t * (rage ? 2.3 : 1.6);
+            world.enemyBullets.push(new Bullet(ox, oy, this.face*(CFG.enemyBulletSpeed+3.0), vy, false, false));
+          }
+          audio.blip(rage?160:190, 0.07, 'sawtooth', 0.20);
+        }else if(p===1){
+          // ring (radial)
+          const shots = rage ? 14 : 10;
+          for(let i=0;i<shots;i++){
+            const ang = (i/shots)*Math.PI*2;
+            const vx = Math.cos(ang) * (rage?8.2:6.8);
+            const vy = Math.sin(ang) * (rage?4.8:4.1);
+            world.enemyBullets.push(new Bullet(this.x+this.w/2, this.y+this.h/2, vx, vy, false, false));
+          }
+          audio.noise(0.08, 0.16);
+          world.camera?.bump(2.4);
+        }else{
+          // tracking triple
+          const dy = clamp((player.y+player.h*0.35 - oy) * 0.02, -2.4, 2.4);
+          const base = this.face*(CFG.enemyBulletSpeed+3.4);
+          world.enemyBullets.push(new Bullet(ox, oy, base, dy, false, false));
+          world.enemyBullets.push(new Bullet(ox, oy, base, dy-1.0, false, false));
+          world.enemyBullets.push(new Bullet(ox, oy, base, dy+1.0, false, false));
+          audio.blip(210, 0.06, 'triangle', 0.18);
+        }
+
+        world.fx.spawn(ox, oy, 26, {vx:this.face*1.4,vy:-0.2,r:2.6,life:300,c:'rgba(251,191,36,.95)',drag:0.90,g:0.0}, 2.2);
+      }
+
+      this.dashCool -= dt;
+      if(this.dashCool<=0 && Math.abs(dist) < 620){
+        this.dashCool = this.rage ? rand(950, 1250) : rand(1200, 1600);
+        // slam dash
+        this.vx += this.face * (this.rage ? 10.5 : 8.4);
+        this.vy = -7.0;
+        world.camera?.bump(5.2);
+        audio.thump(70, 0.14, 0.26);
+        world.fx.spawn(this.x+this.w/2, this.y+this.h, 36, {vx:0,vy:-0.6,r:3.0,life:520,c:'rgba(139,92,246,.9)',drag:0.90,g:0.04}, 3.1);
+      }
+    }
+    draw(ctx, cam){
+      const x = this.x - cam.x + cam.sx;
+      const y = this.y - cam.y + cam.sy;
+      const hit = this.iMs>0;
+      const rage = this.rage;
+
+      ctx.save();
+      // massive aura
+      ctx.globalAlpha = 0.18;
+      const aura = ctx.createRadialGradient(x+this.w/2, y+this.h/2, 10, x+this.w/2, y+this.h/2, 170);
+      aura.addColorStop(0, rage ? 'rgba(251,113,133,.45)' : 'rgba(139,92,246,.45)');
+      aura.addColorStop(0.7, 'rgba(34,211,238,.10)');
+      aura.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath(); ctx.arc(x+this.w/2, y+this.h/2, 170, 0, Math.PI*2); ctx.fill();
+
+      ctx.globalAlpha = hit?0.72:1;
+      ctx.fillStyle = 'rgba(30,32,65,.97)';
+      ctx.strokeStyle = 'rgba(255,255,255,.18)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(x, y, this.w, this.h, 18); ctx.fill(); ctx.stroke();
+
+      // face core
+      ctx.fillStyle = rage ? 'rgba(251,113,133,1)' : 'rgba(139,92,246,1)';
+      ctx.beginPath(); ctx.arc(x+this.w/2 + this.face*14, y+this.h/2 - 10, 8, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(34,211,238,1)';
+      ctx.beginPath(); ctx.arc(x+this.w/2 - this.face*10, y+this.h/2 + 12, 6, 0, Math.PI*2); ctx.fill();
+
+      // boss hp big bar (screen space in HUD too, but here for drama)
+      const t = this.hp/this.maxHp;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.fillRect(x-10, y-18, this.w+20, 12);
+      ctx.fillStyle = rage ? 'rgba(251,113,133,.95)' : 'rgba(139,92,246,.95)';
+      ctx.fillRect(x-10, y-18, (this.w+20)*t, 12);
+
+      ctx.restore();
+    }
+  }
+
+  class Player {
+    constructor(){
+      this.x=120; this.y=0;
+      this.vx=0; this.vy=0;
+      this.w=40; this.h=58;
+      this.face=1;
+
+      this.onGround=false;
+      this.coyote=0;
+      this.jumpBuffer=0;
+
+      this.canDouble=true;
+
+      this.hp=10; this.maxHp=10;
+      this.energy=100; this.maxEnergy=100;
+
+      this.invuln=0;
+
+      this.dashing=false;
+      this.dashT=0;
+      this.dashCd=0;
+
+      this.meleeT=0;
+      this.meleeCd=0;
+
+      this.shootCd=0;
+      this.rapid=false;
+      this.pierce=false;
+
+      this.score=0;
+      this.combo=0;
+      this.comboT=0;
+      this.kills=0;
+
+      this.checkX=120; this.checkY=360;
+
+      this.alive=true;
+      this.win=false;
+
+      this.timeMs=0;
+    }
+
+    respawn(){
+      this.x=this.checkX; this.y=this.checkY;
+      this.vx=0; this.vy=0;
+      this.hp=this.maxHp;
+      this.energy=this.maxEnergy;
+      this.invuln=600;
+      this.dashing=false;
+      this.dashT=0; this.dashCd=0;
+      this.meleeT=0; this.meleeCd=0;
+      this.shootCd=0;
+      this.combo=0; this.comboT=0;
+      this.alive=true;
+      audio.thump(90, 0.12, 0.18);
+    }
+
+    hurt(world, dmg, knockX){
+      if(this.invuln>0 || !this.alive) return;
+      this.hp -= dmg;
+      this.invuln = CFG.invulnMs;
+      this.vx += knockX;
+      this.vy = Math.min(this.vy, -4.0);
+      world.camera?.bump(6.5);
+      world.fx.spawn(this.x+this.w/2, this.y+this.h/2, 30, {vx:0,vy:-0.8,r:2.6,life:420,c:'rgba(251,113,133,.95)',drag:0.90,g:0.03}, 3.0);
+      audio.noise(0.08, 0.20);
+      if(this.hp<=0){
+        this.alive=false;
+        world.fx.spawn(this.x+this.w/2, this.y+this.h/2, 60, {vx:0,vy:-1.2,r:3.2,life:680,c:'rgba(255,255,255,.9)',drag:0.92,g:0.03}, 3.6);
+        audio.thump(55, 0.18, 0.26);
+      }
+    }
+
+    addScore(n){
+      this.score += n;
+      this.combo = Math.min(25, this.combo + 1);
+      this.comboT = 1800;
+    }
+
+    update(dt, world){
+      if(this.win) { this.timeMs += dt; return; }
+      if(!this.alive){ this.timeMs += dt; return; }
+      this.timeMs += dt;
+
+      // timers
+      this.invuln = Math.max(0, this.invuln - dt);
+      this.coyote = Math.max(0, this.coyote - dt);
+      this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
+      this.dashCd = Math.max(0, this.dashCd - dt);
+      this.meleeCd = Math.max(0, this.meleeCd - dt);
+      this.shootCd = Math.max(0, this.shootCd - dt);
+      this.comboT = Math.max(0, this.comboT - dt);
+      if(this.comboT<=0) this.combo = 0;
+
+      // regen energy slowly if not dashing
+      this.energy = clamp(this.energy + (this.dashing ? 0 : 0.22*(dt/16.666)), 0, this.maxEnergy);
+
+      // collect inputs (keyboard OR touch)
+      const L = input.left || input.touchLeft;
+      const R = input.right || input.touchRight;
+
+      const wantJump = input._jumpDown || input.touchJump;
+      const wantDash = input._dashDown || input.touchDash;
+      const wantShoot = input._shootDown || input.touchShoot;
+      const wantMelee = input._meleeDown || input.touchMelee;
+
+      // jump buffering
+      if(wantJump) this.jumpBuffer = CFG.jumpBufferMs;
+
+      // dash
+      if(wantDash && this.dashCd<=0 && this.energy>=18 && !this.dashing){
+        this.dashing = true;
+        this.dashT = CFG.dashMs;
+        this.dashCd = CFG.dashCooldownMs;
+        this.energy -= 18;
+        const dir = (R && !L) ? 1 : (L && !R) ? -1 : this.face;
+        this.face = dir;
+        this.vx = dir * CFG.dashSpeed;
+        this.vy = 0;
+        world.fx.spawn(this.x+this.w/2, this.y+this.h/2, 20, {vx:-dir*0.9,vy:0,r:2.6,life:320,c:'rgba(139,92,246,.95)',drag:0.90,g:0.0}, 2.3);
+        world.camera?.bump(2.6);
+        audio.blip(520, 0.07, 'square', 0.16);
+      }
+
+      // melee
+      if(wantMelee && this.meleeCd<=0){
+        this.meleeCd = 240;
+        this.meleeT = 140;
+        world.camera?.bump(1.2);
+        audio.blip(760, 0.05, 'triangle', 0.12);
+      }
+
+      // shooting
+      const fireDelay = this.rapid ? 80 : 135;
+      if(wantShoot && this.shootCd<=0){
+        this.shootCd = fireDelay;
+        const bx = this.x + this.w/2 + this.face*20;
+        const by = this.y + this.h*0.50;
+        const speed = CFG.bulletSpeed + (this.rapid ? 1.2 : 0);
+        world.playerBullets.push(new Bullet(bx, by, this.face*speed, 0, true, this.pierce));
+        world.fx.spawn(bx, by, 10, {vx:this.face*1.0,vy:-0.2,r:2.2,life:220,c:'rgba(34,211,238,.95)',drag:0.90,g:0.0}, 1.8);
+        audio.blip(420 + (this.rapid?60:0), 0.04, 'square', 0.14);
+      }
+
+      // horizontal move
+      const move = (R?1:0) - (L?1:0);
+      if(move !== 0) this.face = move;
+
+      if(this.dashing){
+        this.dashT -= dt;
+        if(this.dashT<=0){
+          this.dashing=false;
+        }
+      }else{
+        const accel = CFG.accel * (dt/16.666);
+        this.vx += move * accel * CFG.accel;
+        const max = CFG.maxRun;
+        this.vx = clamp(this.vx, -max, max);
+      }
+
+      // gravity
+      if(!this.dashing){
+        this.vy += CFG.gravity * (dt/16.666);
+        this.vy = clamp(this.vy, -30, 24);
+      }
+
+      // Apply friction based on ground
+      const friction = this.onGround ? CFG.frictionGround : CFG.frictionAir;
+      this.vx *= friction;
+
+      // Resolve collisions
+      const prevOnGround = this.onGround;
+      this.onGround = resolveAABB(this, world.solids);
+
+      // Coyote time
+      if(this.onGround){
+        this.coyote = CFG.coyoteMs;
+        this.canDouble = true;
+      }else if(prevOnGround && !this.onGround){
+        // just left ground
+        this.coyote = CFG.coyoteMs;
+      }
+
+      // Wall-slide light (if pushing into a wall while airborne)
+      let touchingWall = false;
+      for(const s of world.solids){
+        if(!s.solid) continue;
+        // check small side overlap
+        const sideProbe = (this.face>0)
+          ? {x:this.x+this.w, y:this.y+8, w:2, h:this.h-16}
+          : {x:this.x-2, y:this.y+8, w:2, h:this.h-16};
+        if(aabb(sideProbe.x, sideProbe.y, sideProbe.w, sideProbe.h, s.x,s.y,s.w,s.h)){
+          touchingWall = true;
+          break;
+        }
+      }
+      if(!this.onGround && touchingWall && move===this.face && this.vy>2.5){
+        this.vy *= 0.72;
+        // subtle particles
+        if(Math.random() < 0.18){
+          world.fx.spawn(this.x + (this.face>0?this.w:0), this.y + this.h*0.70, 1, {vx:-this.face*0.6,vy:-0.6,r:1.8,life:220,c:'rgba(255,255,255,.65)',drag:0.90,g:0.02}, 0.5);
+        }
+      }
+
+      // Jump consume buffered
+      const canGroundJump = (this.coyote>0);
+      if(this.jumpBuffer>0){
+        if(canGroundJump){
+          this.vy = CFG.jumpVel;
+          this.onGround = false;
+          this.coyote = 0;
+          this.jumpBuffer = 0;
+          world.fx.spawn(this.x+this.w/2, this.y+this.h, 18, {vx:0,vy:-0.5,r:2.0,life:340,c:'rgba(255,255,255,.75)',drag:0.90,g:0.03}, 2.0);
+          audio.blip(260, 0.05, 'triangle', 0.12);
+        }else if(this.canDouble){
+          this.vy = CFG.doubleJumpVel;
+          this.canDouble = false;
+          this.jumpBuffer = 0;
+          world.fx.spawn(this.x+this.w/2, this.y+this.h/2, 18, {vx:0,vy:-0.8,r:2.2,life:320,c:'rgba(34,211,238,.95)',drag:0.90,g:0.02}, 2.1);
+          audio.blip(340, 0.05, 'triangle', 0.12);
+        }
+      }
+
+      // Hazards
+      for(const hz of world.hazards){
+        if(aabb(this.x,this.y,this.w,this.h, hz.x,hz.y,hz.w,hz.h)){
+          this.hurt(world, 2, -this.face*7);
+        }
+      }
+
+      // Enemy collision
+      for(const e of world.enemies){
+        if(e.dead) continue;
+        if(aabb(this.x,this.y,this.w,this.h, e.x,e.y,e.w,e.h)){
+          // If dashing, hurt enemy; else hurt player
+          if(this.dashing){
+            const killed = e.hurt(world, 3, this.face*6);
+            if(killed){
+              this.addScore(e.score);
+              this.kills++;
+            }
+          }else{
+            this.hurt(world, 1, -this.face*6);
+            // little bounce
+            this.vy = Math.min(this.vy, -6);
+          }
+        }
+      }
+
+      // Enemy bullets
+      for(const b of world.enemyBullets){
+        if(b.dead) continue;
+        if(aabb(this.x,this.y,this.w,this.h, b.x,b.y,b.w,b.h)){
+          // melee can reflect some shots (timing window)
+          if(this.meleeT>0){
+            // reflect: convert to friendly, reverse vx
+            b.friendly = true;
+            b.vx = -b.vx * 1.08;
+            b.vy *= 0.75;
+            b.pierce = false;
+            world.fx.spawn(b.x, b.y, 14, {vx:0,vy:-0.4,r:2.3,life:240,c:'rgba(34,211,238,.95)',drag:0.90,g:0.02}, 2.0);
+            audio.blip(620, 0.05, 'square', 0.14);
+            world.camera?.bump(1.8);
+          }else{
+            b.dead = true;
+            this.hurt(world, 1, sign(b.vx)*6);
+          }
+        }
+      }
+
+      // Player bullets -> enemies
+      for(const b of world.playerBullets){
+        if(b.dead) continue;
+        for(const e of world.enemies){
+          if(e.dead) continue;
+          if(aabb(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
+            const killed = e.hurt(world, 1, sign(b.vx)*3.5);
+            if(!b.pierce) b.dead = true;
+            this.addScore(killed ? e.score : 10);
+            if(killed){
+              this.kills++;
+              // small drop chance
+              if(Math.random() < 0.10) world.pickups.push(new Pickup(e.x+e.w/2, e.y+e.h/2, 'coin'));
+              if(Math.random() < 0.05) world.pickups.push(new Pickup(e.x+e.w/2, e.y+e.h/2, 'energy'));
+            }
+            world.camera?.bump(1.2);
+            break;
+          }
+        }
+      }
+
+      // Melee hitbox
+      if(this.meleeT>0){
+        this.meleeT -= dt;
+        const mx = this.face>0 ? this.x+this.w : this.x-34;
+        const my = this.y+10;
+        const mw = 34, mh = this.h-20;
+        for(const e of world.enemies){
+          if(e.dead) continue;
+          if(aabb(mx,my,mw,mh, e.x,e.y,e.w,e.h)){
+            const killed = e.hurt(world, 2, this.face*7);
+            this.addScore(killed ? e.score : 15);
+            if(killed) this.kills++;
+            world.camera?.bump(1.6);
+          }
+        }
+        // slash FX
+        if(Math.random() < 0.35){
+          world.fx.spawn(mx + mw/2, my + mh/2, 2, {vx:this.face*1.6,vy:-0.2,r:2.2,life:220,c:'rgba(251,191,36,.95)',drag:0.88,g:0.0}, 1.0);
+        }
+      }
+
+      // Pickups
+      for(const p of world.pickups){
+        if(p.dead) continue;
+        if(aabb(this.x,this.y,this.w,this.h, p.x,p.y,p.w,p.h)){
+          p.dead = true;
+          if(p.type==='coin'){
+            this.addScore(35);
+            audio.blip(880, 0.04, 'square', 0.10);
+          }else if(p.type==='heal'){
+            this.hp = clamp(this.hp + 3, 0, this.maxHp);
+            audio.blip(520, 0.06, 'triangle', 0.12);
+          }else if(p.type==='energy'){
+            this.energy = clamp(this.energy + 35, 0, this.maxEnergy);
+            audio.blip(620, 0.06, 'triangle', 0.12);
+          }else if(p.type==='mod_rapid'){
+            this.rapid = true;
+            this.addScore(120);
+            audio.blip(980, 0.07, 'sawtooth', 0.12);
+          }else if(p.type==='mod_pierce'){
+            this.pierce = true;
+            this.addScore(120);
+            audio.blip(420, 0.08, 'sawtooth', 0.12);
+          }
+          world.fx.spawn(this.x+this.w/2, this.y+this.h/2, 24, {vx:0,vy:-0.6,r:2.4,life:420,c:'rgba(255,255,255,.85)',drag:0.90,g:0.02}, 2.4);
+        }
+      }
+
+      // Checkpoints
+      for(const c of world.checkpoints){
+        if(aabb(this.x,this.y,this.w,this.h, c.x,c.y,c.w,c.h)){
+          if(!c.used){
+            c.used = true;
+            this.checkX = c.x - 60;
+            this.checkY = c.y - 10;
+            this.addScore(150);
+            world.fx.spawn(c.x+c.w/2, c.y+10, 38, {vx:0,vy:-0.8,r:2.6,life:560,c:'rgba(139,92,246,.9)',drag:0.90,g:0.03}, 2.8);
+            world.camera?.bump(3.2);
+            audio.blip(740, 0.10, 'triangle', 0.14);
+          }
+        }
+      }
+
+      // Spawning miniboss/boss triggers
+      // spawn miniboss near segment end-2
+      if(!world.minibossSpawned && this.x > world.width - world.segmentLen*2 + 160){
+        world.minibossSpawned = true;
+        world.enemies.push(new MiniBoss(world.width - world.segmentLen*2 + 480, 488));
+        world.fx.spawn(world.width - world.segmentLen*2 + 480, 440, 60, {vx:0,vy:-1.0,r:3.2,life:740,c:'rgba(139,92,246,.9)',drag:0.90,g:0.03}, 3.3);
+        world.camera?.bump(8);
+        audio.thump(65, 0.18, 0.30);
+      }
+      // spawn boss near last segment
+      if(!world.bossSpawned && this.x > world.width - world.segmentLen + 140){
+        world.bossSpawned = true;
+        world.enemies.push(new Boss(world.width - world.segmentLen + 420, 444));
+        world.fx.spawn(world.width - world.segmentLen + 420, 420, 90, {vx:0,vy:-1.3,r:3.6,life:920,c:'rgba(251,113,133,.85)',drag:0.90,g:0.03}, 3.8);
+        world.camera?.bump(10);
+        audio.thump(55, 0.22, 0.32);
+      }
+
+      // Win condition: boss dead + reach goal
+      const bossAlive = world.enemies.some(e => e.kind==='boss' && !e.dead);
+      if(!bossAlive && this.x > world.goalX){
+        this.win = true;
+        this.addScore(2000);
+        world.fx.spawn(this.x+this.w/2, this.y+this.h/2, 120, {vx:0,vy:-1.8,r:3.8,life:1200,c:'rgba(34,211,238,.9)',drag:0.92,g:0.02}, 4.2);
+        world.camera?.bump(12);
+        audio.blip(520, 0.18, 'triangle', 0.16);
+        audio.blip(780, 0.16, 'triangle', 0.14);
+      }
+    }
+
+    draw(ctx, cam){
+      const x = this.x - cam.x + cam.sx;
+      const y = this.y - cam.y + cam.sy;
+
+      ctx.save();
+
+      const blink = (this.invuln>0) ? (Math.floor(this.invuln/70)%2===0) : false;
+      if(blink) ctx.globalAlpha = 0.45;
+
+      // dash trail aura
+      if(this.dashing){
+        ctx.globalAlpha *= 0.25;
+        ctx.fillStyle = 'rgba(139,92,246,.95)';
+        ctx.beginPath();
+        ctx.ellipse(x+this.w/2 - this.face*10, y+this.h/2, this.w*1.1, this.h*0.7, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = blink ? 0.45 : 1;
+      }
+
+      // body
+      ctx.fillStyle = 'rgba(30,32,65,.97)';
+      ctx.strokeStyle = 'rgba(255,255,255,.18)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(x, y, this.w, this.h, 12); ctx.fill(); ctx.stroke();
+
+      // core / visor
+      const core = ctx.createLinearGradient(x, y, x+this.w, y+this.h);
+      core.addColorStop(0, 'rgba(34,211,238,.95)');
+      core.addColorStop(1, 'rgba(139,92,246,.95)');
+      ctx.fillStyle = core;
+      ctx.beginPath(); ctx.roundRect(x+7, y+12, this.w-14, 16, 8); ctx.fill();
+
+      // eye dot
+      ctx.fillStyle = 'rgba(255,255,255,.95)';
+      ctx.beginPath();
+      ctx.arc(x+this.w/2 + this.face*8, y+20, 3.2, 0, Math.PI*2);
+      ctx.fill();
+
+      // melee slash overlay
+      if(this.meleeT>0){
+        const mx = this.face>0 ? x+this.w-2 : x-32;
+        const my = y+10;
+        ctx.globalAlpha = 0.45;
+        ctx.fillStyle = 'rgba(251,191,36,.95)';
+        ctx.beginPath(); ctx.roundRect(mx, my, 32, this.h-20, 12); ctx.fill();
+        ctx.globalAlpha = blink ? 0.45 : 1;
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // =========================
+  // Rendering helpers
+  // =========================
+  function drawParallax(ctx, cam, world, t){
+    const W = canvas.width, H = canvas.height;
+
+    // base gradient sky
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0b1238');
+    g.addColorStop(0.55, '#070812');
+    g.addColorStop(1, '#03030a');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+
+    // stars
+    ctx.globalAlpha = 0.8;
+    for(let i=0;i<140;i++){
+      const sx = (i*97) % W;
+      const sy = (i*53) % (H*0.65);
+      const tw = (Math.sin(t*0.001 + i)*0.5+0.5);
+      ctx.globalAlpha = 0.25 + tw*0.5;
+      ctx.fillStyle = 'rgba(255,255,255,.9)';
+      ctx.fillRect(sx, sy, 1, 1);
+    }
+    ctx.globalAlpha = 1;
+
+    // procedural neon "city" layers
+    const baseX = cam.x;
+    for(let layer=0; layer<3; layer++){
+      const par = [0.18, 0.35, 0.62][layer];
+      const yBase = [440, 470, 505][layer];
+      const amp = [90, 70, 45][layer];
+      const step = [36, 30, 24][layer];
+      const hue = layer===0 ? 'rgba(139,92,246,' : layer===1 ? 'rgba(34,211,238,' : 'rgba(255,255,255,';
+
+      for(let x=0; x<W+step; x+=step){
+        const wx = Math.floor((baseX*par + x)*0.08);
+        const h = Math.floor((hash2(wx + layer*999) * 0.5 + 0.5) * amp) + 12;
+        const y = yBase - h;
+        ctx.fillStyle = `${hue}${0.10 + layer*0.06})`;
+        ctx.fillRect(x, y, step-1, h);
+
+        // windows
+        if(layer>0 && (wx%3===0)){
+          ctx.fillStyle = layer===1 ? 'rgba(34,211,238,.20)' : 'rgba(139,92,246,.12)';
+          for(let yy=y+8; yy<y+h-8; yy+=10){
+            ctx.fillRect(x+4, yy, 3, 2);
+          }
+        }
+      }
+    }
+
+    // subtle vignetting
+    const vg = ctx.createRadialGradient(W*0.5, H*0.45, 220, W*0.5, H*0.45, 740);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function drawWorld(ctx, cam, world, player){
+    // solids
+    for(const s of world.solids){
+      const x = s.x - cam.x + cam.sx;
+      const y = s.y - cam.y + cam.sy;
+      if(x+s.w < -80 || x > canvas.width+80) continue;
+
+      if(s.kind==='ground' || s.kind==='plat'){
+        // neon edge platform
+        ctx.save();
+        // fill
+        ctx.fillStyle = 'rgba(16,18,44,.88)';
+        ctx.beginPath(); ctx.roundRect(x, y, s.w, s.h, 12); ctx.fill();
+
+        // top glow line
+        const grad = ctx.createLinearGradient(x, y, x+s.w, y);
+        grad.addColorStop(0, 'rgba(34,211,238,.20)');
+        grad.addColorStop(0.5, 'rgba(139,92,246,.26)');
+        grad.addColorStop(1, 'rgba(34,211,238,.20)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x+8, y+2);
+        ctx.lineTo(x+s.w-8, y+2);
+        ctx.stroke();
+
+        // inner shimmer
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = 'rgba(255,255,255,.15)';
+        for(let i=0;i<Math.floor(s.w/70);i++){
+          const xx = x + 14 + i*70 + ((Math.sin((cam.x*0.02)+i)*0.5+0.5)*18);
+          ctx.fillRect(xx, y+8, 22, Math.min(10, s.h-12));
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,.10)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(x, y, s.w, s.h, 12); ctx.stroke();
+        ctx.restore();
+      }else if(s.kind==='gate'){
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+        const g = ctx.createLinearGradient(x, y, x, y+s.h);
+        g.addColorStop(0, 'rgba(34,211,238,.25)');
+        g.addColorStop(0.5, 'rgba(139,92,246,.22)');
+        g.addColorStop(1, 'rgba(251,113,133,.18)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x, y, s.w, s.h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,.18)';
+        ctx.strokeRect(x, y, s.w, s.h);
+        ctx.restore();
+      }
+    }
+
+    // hazards
+    for(const hz of world.hazards){
+      const x = hz.x - cam.x + cam.sx;
+      const y = hz.y - cam.y + cam.sy;
+      if(x+hz.w < -80 || x > canvas.width+80) continue;
+
+      ctx.save();
+      // spikes
+      ctx.fillStyle = 'rgba(251,113,133,.85)';
+      ctx.globalAlpha = 0.9;
+      const spikes = Math.floor(hz.w / 20);
+      for(let i=0;i<spikes;i++){
+        const sx = x + i*20;
+        ctx.beginPath();
+        ctx.moveTo(sx, y+hz.h);
+        ctx.lineTo(sx+10, y);
+        ctx.lineTo(sx+20, y+hz.h);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = 'rgba(251,191,36,.45)';
+      ctx.fillRect(x, y+hz.h-3, hz.w, 3);
+      ctx.restore();
+    }
+
+    // checkpoints
+    for(const c of world.checkpoints){
+      const x = c.x - cam.x + cam.sx;
+      const y = c.y - cam.y + cam.sy;
+      if(x+c.w < -80 || x > canvas.width+80) continue;
+
+      ctx.save();
+      ctx.fillStyle = c.used ? 'rgba(34,211,238,.55)' : 'rgba(139,92,246,.55)';
+      ctx.fillRect(x, y, c.w, c.h);
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = c.used ? 'rgba(34,211,238,.85)' : 'rgba(139,92,246,.85)';
+      ctx.fillRect(x-10, y+8, 10, 20);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,.18)';
+      ctx.strokeRect(x, y, c.w, c.h);
+      ctx.restore();
+    }
+
+    // pickups
+    for(const p of world.pickups) if(!p.dead) p.draw(ctx, cam);
+
+    // bullets
+    for(const b of world.playerBullets) if(!b.dead) b.draw(ctx, cam);
+    for(const b of world.enemyBullets) if(!b.dead) b.draw(ctx, cam);
+
+    // enemies
+    for(const e of world.enemies) if(!e.dead) e.draw(ctx, cam);
+
+    // player
+    player.draw(ctx, cam);
+
+    // particles
+    world.fx.draw(ctx, cam);
+  }
+
+  function drawHUD(ctx, world, player, state){
+    const W = canvas.width, H = canvas.height;
+    const pad = 14;
+
+    // panel backdrop
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath();
+    ctx.roundRect(pad, pad, 430, 86, 14);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // HP bar
+    const hpT = player.hp/player.maxHp;
+    ctx.fillStyle = 'rgba(255,255,255,.10)';
+    ctx.beginPath(); ctx.roundRect(pad+12, pad+14, 220, 14, 8); ctx.fill();
+    ctx.fillStyle = 'rgba(251,113,133,.95)';
+    ctx.beginPath(); ctx.roundRect(pad+12, pad+14, 220*hpT, 14, 8); ctx.fill();
+
+    // Energy bar
+    const enT = player.energy/player.maxEnergy;
+    ctx.fillStyle = 'rgba(255,255,255,.10)';
+    ctx.beginPath(); ctx.roundRect(pad+12, pad+38, 220, 12, 8); ctx.fill();
+    ctx.fillStyle = 'rgba(34,211,238,.95)';
+    ctx.beginPath(); ctx.roundRect(pad+12, pad+38, 220*enT, 12, 8); ctx.fill();
+
+    // text
+    ctx.fillStyle = 'rgba(233,236,255,.95)';
+    ctx.font = '12px ui-monospace, monospace';
+    ctx.fillText(`SCORE ${player.score}`, pad+250, pad+26);
+    ctx.fillText(`COMBO x${player.combo}`, pad+250, pad+44);
+    ctx.fillText(`KILLS ${player.kills}`, pad+250, pad+62);
+
+    const sec = Math.floor(player.timeMs/1000);
+    const mm = String(Math.floor(sec/60)).padStart(2,'0');
+    const ss = String(sec%60).padStart(2,'0');
+    ctx.fillStyle = 'rgba(167,176,255,.95)';
+    ctx.fillText(`${mm}:${ss}`, pad+374, pad+26);
+
+    // Mods
+    const mods = [];
+    if(player.rapid) mods.push('RAPID');
+    if(player.pierce) mods.push('PIERCE');
+    ctx.fillStyle = 'rgba(167,176,255,.90)';
+    ctx.fillText(mods.length?`MODS ${mods.join(', ')}`:'MODS —', pad+250, pad+80);
+
+    // Boss bar if boss alive
+    const boss = world.enemies.find(e => e.kind==='boss' && !e.dead);
+    if(boss){
+      const t = boss.hp/boss.maxHp;
+      const bw = 520;
+      const bx = (W-bw)/2;
+      const by = 18;
+      ctx.globalAlpha = 0.70;
+      ctx.fillStyle = 'rgba(0,0,0,.42)';
+      ctx.beginPath(); ctx.roundRect(bx, by, bw, 14, 8); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = boss.rage ? 'rgba(251,113,133,.95)' : 'rgba(139,92,246,.95)';
+      ctx.beginPath(); ctx.roundRect(bx, by, bw*t, 14, 8); ctx.fill();
+      ctx.fillStyle = 'rgba(233,236,255,.92)';
+      ctx.fillText('BOSS: RIFT WARDEN', bx, by-4);
+    }
+
+    // State overlay text
+    if(state !== 'play'){
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      ctx.fillRect(0,0,W,H);
+      ctx.globalAlpha = 1;
+
+      ctx.fillStyle = 'rgba(233,236,255,.96)';
+      ctx.textAlign = 'center';
+      ctx.font = '44px ui-monospace, monospace';
+
+      let title = '';
+      let sub = '';
+      if(state==='title'){
+        title = 'NEON RIFT 2';
+        sub = 'Press SPACE / Tap to Start';
+      }else if(state==='paused'){
+        title = 'PAUSED';
+        sub = 'Press P to Resume';
+      }else if(state==='dead'){
+        title = 'YOU DIED';
+        sub = 'Press R / Tap to Retry';
+      }else if(state==='win'){
+        title = 'RIFT SEALED';
+        sub = 'Press R / Tap to Run Again';
+      }
+
+      ctx.fillText(title, W/2, H/2 - 30);
+      ctx.font = '16px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(167,176,255,.96)';
+      ctx.fillText(sub, W/2, H/2 + 12);
+
+      // stats line
+      ctx.fillStyle = 'rgba(233,236,255,.86)';
+      ctx.font = '13px ui-monospace, monospace';
+      ctx.fillText(`Score ${player.score}  •  Kills ${player.kills}  •  Combo Peak ${Math.max(1,player.combo)}`, W/2, H/2 + 44);
+
+      ctx.textAlign = 'left';
+    }
+
+    // Touch controls UI buttons
+    const btn = 56;
+    const xR = W - pad - btn;
+    const yDash = H - pad - btn;
+    const yJump = H - pad - btn*2 - 8;
+    const xShoot = xR - btn - 10;
+    const xMelee = xShoot;
+
+    const drawBtn = (x,y,label,on,color) => {
+      ctx.save();
+      ctx.globalAlpha = on ? 0.95 : 0.55;
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.beginPath(); ctx.roundRect(x-2,y-2,btn+4,btn+4,14); ctx.fill();
+      const g = ctx.createLinearGradient(x,y,x+btn,y+btn);
+      g.addColorStop(0, color);
+      g.addColorStop(1, 'rgba(255,255,255,.08)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.roundRect(x,y,btn,btn,14); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.14)';
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(233,236,255,.92)';
+      ctx.font = '12px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, x+btn/2, y+btn/2+4);
+      ctx.restore();
+    };
+
+    // Show touch buttons always; they work fine on desktop too.
+    drawBtn(xR, yJump, 'JUMP', input.touchJump, 'rgba(34,211,238,.22)');
+    drawBtn(xR, yDash, 'DASH', input.touchDash, 'rgba(139,92,246,.22)');
+    drawBtn(xShoot, yDash, 'SHOT', input.touchShoot, 'rgba(34,211,238,.18)');
+    drawBtn(xMelee, yJump, 'SLASH', input.touchMelee, 'rgba(251,191,36,.18)');
+
+    ctx.restore();
+  }
+
+  // =========================
+  // Main Game Loop (fixed timestep)
+  // =========================
+  const world = new World();
+  const player = new Player();
+  const camera = new Camera();
+  world.camera = camera;
+
+  let state = 'title'; // title | play | paused | dead | win
+  let last = now();
+  let acc = 0;
+  const step = 1000/60; // fixed 60hz
+
+  function newRun(){
+    world.reset(randi(1, 10_000_000));
+    player.checkX = 120; player.checkY = 360;
+    player.x = 120; player.y = 360;
+    player.vx=0; player.vy=0;
+    player.hp = player.maxHp;
+    player.energy = player.maxEnergy;
+    player.invuln = 500;
+    player.score=0; player.combo=0; player.comboT=0; player.kills=0;
+    player.rapid=false; player.pierce=false;
+    player.alive=true; player.win=false;
+    player.timeMs=0;
+    state = 'play';
+    camera.x=0; camera.y=0; camera.shake=0;
+    audio.ensure();
+  }
+
+  function tick(dt){
+    if(state !== 'play') return;
+
+    // Update world entities
+    player.update(dt, world);
+
+    // Spawn logic also depends on player progress (handled in player.update)
+
+    // Update enemies
+    for(const e of world.enemies){
+      if(e.dead) continue;
+      e.update(dt, world, player);
+    }
+
+    // Update bullets
+    for(const b of world.playerBullets) if(!b.dead) b.update(dt, world);
+    for(const b of world.enemyBullets) if(!b.dead) b.update(dt, world);
+
+    // Cleanup bullets
+    world.playerBullets = world.playerBullets.filter(b => !b.dead);
+    world.enemyBullets = world.enemyBullets.filter(b => !b.dead);
+
+    // Update pickups
+    for(const p of world.pickups) if(!p.dead) p.update(dt, world);
+    world.pickups = world.pickups.filter(p => !p.dead);
+
+    // Cleanup enemies
+    world.enemies = world.enemies.filter(e => !e.dead);
+
+    // particles
+    world.fx.update(dt);
+
+    // Determine state transitions
+    if(!player.alive){
+      state = 'dead';
+    }
+    if(player.win){
+      state = 'win';
+      // persist best score
+      const best = Number(localStorage.getItem('neonrift_best') || '0');
+      if(player.score > best) localStorage.setItem('neonrift_best', String(player.score));
+    }
+
+    // Camera follow (center on player but clamp within world)
+    const targetX = clamp(player.x - canvas.width*0.45, 0, Math.max(0, world.width - canvas.width));
+    const targetY = clamp(player.y - canvas.height*0.48, -40, 120); // mostly flat; small vertical drift
+    camera.update(targetX, targetY);
+  }
+
+  function render(t){
+    // Background parallax
+    drawParallax(ctx, camera, world, t);
+
+    // World
+    drawWorld(ctx, camera, world, player);
+
+    // Foreground mist
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    for(let i=0;i<10;i++){
+      const x = ((i*180 + (t*0.02)) % (canvas.width+200)) - 100;
+      const y = 120 + Math.sin((t*0.001)+i)*30;
+      const w = 180, h = 60;
+      const g = ctx.createLinearGradient(x,y,x+w,y+h);
+      g.addColorStop(0, 'rgba(34,211,238,.05)');
+      g.addColorStop(1, 'rgba(139,92,246,.06)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(x+w/2, y+h/2, w/2, h/2, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // HUD + overlays
+    drawHUD(ctx, world, player, state);
+
+    // Additional small footer info
+    ctx.save();
+    ctx.fillStyle = 'rgba(167,176,255,.72)';
+    ctx.font = '11px ui-monospace, monospace';
+    const best = Number(localStorage.getItem('neonrift_best') || '0');
+    ctx.fillText(`Best: ${best}`, canvas.width - 90, canvas.height - 12);
+    ctx.restore();
+  }
+
+  function consumeEdges(){
+    // Handle one-shot controls
+    input._shootDown = false;
+    input._meleeDown = false;
+    input._dashDown = false;
+    input._jumpDown = false;
+
+    if(input.pause){
+      input.pause = false;
+      if(state==='play') state='paused';
+      else if(state==='paused') state='play';
+      audio.blip(240, 0.05, 'triangle', 0.10);
+    }
+    if(input.restart){
+      input.restart = false;
+      newRun();
+    }
+    if(input.mute){
+      input.mute = false;
+      audio.toggleMute();
+    }
+  }
+
+  // Click/tap to start or restart
+  canvas.addEventListener('click', () => {
+    input.anyPressed = true;
+    if(state==='title'){
+      newRun();
+    }else if(state==='dead' || state==='win'){
+      newRun();
+    }
+  });
+
+  function loop(){
+    const t = now();
+    let dt = t - last;
+    last = t;
+    dt = clamp(dt, 0, 50); // avoid death spirals
+
+    // Fixed step accumulation
+    acc += dt;
+    while(acc >= step){
+      if(state === 'paused'){
+        // still tick particles slightly for ambience
+        world.fx.update(step*0.5);
+      }else{
+        tick(step);
+      }
+      acc -= step;
+    }
+
+    render(t);
+    consumeEdges();
+
+    requestAnimationFrame(loop);
+  }
+
+  // Start in title
+  world.reset(randi(1, 10_000_000));
+  player.checkX = 120; player.checkY = 360;
+  player.x = 120; player.y = 360;
+
+  // Draw initial frame
+  render(now());
+  loop();
+
+})();
+</script>
+</body>
+</html>
